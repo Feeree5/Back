@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة إدارة الطلبات المباشرة</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #ff6b00;
+      --bg-dark: #121212;
+      --border: #333333;
+    }
+
+    * { box-sizing: border-box; margin:0; padding:0; font-family:'Cairo', sans-serif; }
+
+    body {
+      background: #121212;
+      color: white;
+      padding: 20px;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; }
+
+    h1 { text-align: center; color: var(--primary); margin-bottom: 20px; }
+
+    .order-card {
+      background: #1e1e1e;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 15px;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .order-card.new-alert {
+      border: 2px solid var(--primary);
+      animation: pulseGlow 1.5s infinite alternate;
+    }
+
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 5px rgba(255, 107, 0, 0.4); opacity: 0.7; }
+      100% { box-shadow: 0 0 20px rgba(255, 107, 0, 1); opacity: 1; }
+    }
+
+    .order-header {
+      padding: 15px;
+      background: #282828;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .receipt-body {
+      display: none;
+      padding: 20px;
+      background: #fff;
+      color: #000;
+      font-family: monospace;
+    }
+
+    .order-card.open .receipt-body { display: block; }
+
+    .receipt-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+
+    .receipt-table th, .receipt-table td {
+      border-bottom: 1px dashed #666;
+      padding: 5px;
+      text-align: right;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .btn-accept {
+      flex: 1; padding: 10px; background: #28a745; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;
+    }
+
+    .btn-reject {
+      flex: 1; padding: 10px; background: #dc3545; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;
+    }
+
+    /* إخفاء إطار الطباعة نهائياً من الشاشة */
+    #printIframe {
+      display: none;
+      width: 0;
+      height: 0;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🔔 متابعة الطلبات أونلاين (الطلبات الجديدة فقط)</h1>
+  <div id="ordersContainer">
+    <p style="text-align: center;">جاري استقبال الطلبات...</p>
+  </div>
+</div>
+
+<iframe id="printIframe"></iframe>
+
+<script>
+  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzlQp0gple0zdY4hJocGdrabe76BHs1Tb2xBPs4JS_Hp5nOyP9SFM6IOJ9IqGuLnUXohA/exec";
+  let knownOrders = {};
+  let currentOrdersList = [];
+
+  async function fetchLiveOrders() {
+    try {
+      const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=getOrders`);
+      const allOrders = await res.json();
+      
+      const newOrders = allOrders.filter(ord => ord.status === 'جديد' || ord.status === 'معلق');
+      currentOrdersList = newOrders;
+
+      const container = document.getElementById('ordersContainer');
+      if (newOrders.length === 0) {
+        container.innerHTML = `<p style="text-align: center;">لا توجد طلبات جديدة حالياً.</p>`;
+        return;
+      }
+
+      container.innerHTML = '';
+      newOrders.reverse().forEach(ord => {
+        const isOpened = knownOrders[ord.code] && knownOrders[ord.code].opened;
+        
+        container.innerHTML += `
+          <div class="order-card ${!isOpened ? 'new-alert' : ''} ${isOpened ? 'open' : ''}" id="card-${ord.code}">
+            <div class="order-header" onclick="openReceipt('${ord.code}')">
+              <div>
+                <strong>كود: ${ord.code}</strong> | العميل: ${ord.name}
+              </div>
+              <div>
+                <span>الحالة: <b>${ord.status}</b></span>
+              </div>
+            </div>
+
+            <div class="receipt-body">
+              <h3 style="text-align:center;">--- فاتورة طلب سوبرماركت ---</h3>
+              <p><b>كود الطلب:</b> ${ord.code}</p>
+              <p><b>الاسم:</b> ${ord.name}</p>
+              <p><b>العنوان:</b> ${ord.address}</p>
+              <p><b>الهاتف:</b> ${ord.phone}</p>
+              <br>
+              <table class="receipt-table">
+                <thead>
+                  <tr><th>الصنف</th><th>العدد</th><th>السعر</th></tr>
+                </thead>
+                <tbody>
+                  ${ord.items.map(i => `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.total} ج</td></tr>`).join('')}
+                </tbody>
+              </table>
+              <h4 style="text-align:left;">الإجمالي الكلي: ${ord.totalMoney} جنيه</h4>
+
+              <div class="btn-group">
+                <button class="btn-accept" onclick="handleAccept('${ord.code}')">✔ قبول وطباعة الرسييت</button>
+                <button class="btn-reject" onclick="handleReject('${ord.code}')">✖ إلغاء/رفض</button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    } catch(e) {}
+  }
+
+  function openReceipt(code) {
+    if(!knownOrders[code]) knownOrders[code] = {};
+    knownOrders[code].opened = true;
+    const card = document.getElementById(`card-${code}`);
+    if(card) {
+      card.classList.remove('new-alert');
+      card.classList.toggle('open');
+    }
+  }
+
+  async function handleAccept(code) {
+    const ord = currentOrdersList.find(o => o.code === code);
+    
+    // 1. إخفاء الطلب وتحديث السيرفر فوراً لحظة الضغط
+    updateStatusAndHide(code, 'مقبول');
+
+    // 2. إطلاق امر الطباعة بعد إخفاء الطلب من الشاشة
+    if(ord) {
+      printReceiptViaIframe(ord);
+    }
+  }
+
+  async function handleReject(code) {
+    updateStatusAndHide(code, 'مرفوض');
+  }
+
+  function updateStatusAndHide(code, newStatus) {
+    // إخفاء البطاقة فوراً من واجهة المستخدم
+    const card = document.getElementById(`card-${code}`);
+    if (card) {
+      card.remove();
+      currentOrdersList = currentOrdersList.filter(o => o.code !== code);
+      if (currentOrdersList.length === 0) {
+        document.getElementById('ordersContainer').innerHTML = `<p style="text-align: center;">لا توجد طلبات جديدة حالياً.</p>`;
+      }
+    }
+
+    // إرسال التحديث للسيرفر في الخلفية
+    fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "updateStatus", orderCode: code, status: newStatus })
+    }).catch(e => console.error(e));
+  }
+
+  function printReceiptViaIframe(ord) {
+    const iframe = document.getElementById('printIframe');
+    const iframeDoc = iframe.contentWindow || iframe.contentDocument.document || iframe.contentDocument;
+
+    const receiptHTML = `
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          @page { size: 80mm auto; margin: 0; }
+          body {
+            font-family: monospace, sans-serif;
+            width: 78mm;
+            padding: 3mm;
+            margin: 0;
+            color: #000;
+            background: #fff;
+            direction: rtl;
+            font-size: 12px;
+          }
+          table { width: 100%; border-collapse: collapse; margin: 5px 0; }
+          th, td { text-align: right; padding: 3px 0; }
+          .center { text-align: center; }
+          .left { text-align: left; }
+          .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="center">
+          <h2 style="margin:0; font-size:15px;">🛒 سوبرماركت أونلاين</h2>
+          <div><b>فاتورة طلب</b></div>
+          <div>كود الطلب: <b>${ord.code}</b></div>
+        </div>
+        <div class="line"></div>
+        <div><b>الاسم:</b> ${ord.name}</div>
+        <div><b>العنوان:</b> ${ord.address}</div>
+        <div><b>الهاتف:</b> ${ord.phone}</div>
+        <div class="line"></div>
+        <table>
+          <thead>
+            <tr style="border-bottom:1px solid #000;">
+              <th>الصنف</th>
+              <th class="center">العدد</th>
+              <th class="left">السعر</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ord.items.map(i => `
+              <tr>
+                <td>${i.name}</td>
+                <td class="center">${i.qty}</td>
+                <td class="left">${i.total} ج</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="line"></div>
+        <div class="left" style="font-size:13px; font-weight:bold;">
+          الإجمالي: ${ord.totalMoney} جنيه
+        </div>
+        <div class="center" style="margin-top:8px; font-size:10px;">
+          شكراً لتسوقكم معنا!
+        </div>
+      </body>
+      </html>
+    `;
+
+    iframeDoc.document.open();
+    iframeDoc.document.write(receiptHTML);
+    iframeDoc.document.close();
+
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }, 250);
+  }
+
+  setInterval(fetchLiveOrders, 3000);
+  fetchLiveOrders();
+</script>
+</body>
+</html>
