@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة متابعة الطلبات - الشاشة</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+    body { background: #121212; color: #ffffff; padding: 15px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { text-align: center; color: #ff6b00; margin-bottom: 20px; font-size: 24px; }
+    
+    .order-card {
+      background: #1e1e1e;
+      border: 2px solid #333333;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      overflow: hidden;
+    }
+    .order-card.new-alert {
+      border-color: #ff6b00;
+      background: #251d16;
+    }
+    .order-header {
+      padding: 15px;
+      background: #282828;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      font-size: 18px;
+    }
+    .receipt-body {
+      display: none;
+      padding: 15px;
+      background: #ffffff;
+      color: #000000;
+      font-size: 16px;
+    }
+    .order-card.open .receipt-body { display: block; }
+    
+    .receipt-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+    .receipt-table th, .receipt-table td {
+      border-bottom: 1px dashed #666;
+      padding: 8px 5px;
+      text-align: right;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .btn-accept {
+      flex: 1; padding: 12px; background: #28a745; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;
+    }
+    .btn-reject {
+      flex: 1; padding: 12px; background: #dc3545; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;
+    }
+    .status-msg {
+      text-align: center;
+      font-size: 20px;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🔔 متابعة الطلبات أونلاين</h1>
+  <div id="ordersContainer">
+    <p class="status-msg">جاري جلب الطلبات...</p>
+  </div>
+</div>
+
+<script>
+  var GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzlQp0gple0zdY4hJocGdrabe76BHs1Tb2xBPs4JS_Hp5nOyP9SFM6IOJ9IqGuLnUXohA/exec";
+  var knownOrders = {};
+
+  function fetchLiveOrders() {
+    var xhr = new XMLHttpRequest();
+    // إضافة timestamp لمنع المتصفح القديم من التخزين المؤقت (Cache)
+    var url = GOOGLE_SCRIPT_URL + "?action=getOrders&t=" + new Date().getTime();
+    
+    xhr.open("GET", url, true);
+
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          try {
+            var response = JSON.parse(xhr.responseText);
+            var newOrders = [];
+            
+            for (var i = 0; i < response.length; i++) {
+              if (response[i].status === 'جديد' || response[i].status === 'معلق') {
+                newOrders.push(response[i]);
+              }
+            }
+            renderOrders(newOrders);
+          } catch(e) {
+            document.getElementById('ordersContainer').innerHTML = '<p class="status-msg" style="color:red;">حدث خطأ في معالجة البيانات</p>';
+          }
+        } else {
+          document.getElementById('ordersContainer').innerHTML = '<p class="status-msg" style="color:red;">خطأ في الاتصال بالسيرفر (' + xhr.status + ')</p>';
+        }
+      }
+    };
+
+    xhr.onerror = function() {
+      document.getElementById('ordersContainer').innerHTML = '<p class="status-msg" style="color:red;">تعذر الاتصال بالشبكة</p>';
+    };
+
+    xhr.send();
+  }
+
+  function renderOrders(newOrders) {
+    var container = document.getElementById('ordersContainer');
+    if (newOrders.length === 0) {
+      container.innerHTML = '<p class="status-msg">لا توجد طلبات جديدة حالياً.</p>';
+      return;
+    }
+
+    var html = '';
+    for (var j = newOrders.length - 1; j >= 0; j--) {
+      var ord = newOrders[j];
+      var isOpened = knownOrders[ord.code] && knownOrders[ord.code].opened;
+      
+      var itemsHtml = '';
+      if (ord.items && ord.items.length) {
+        for (var k = 0; k < ord.items.length; k++) {
+          itemsHtml += '<tr><td>' + ord.items[k].name + '</td><td>' + ord.items[k].qty + '</td><td>' + ord.items[k].total + ' ج</td></tr>';
+        }
+      }
+
+      html += '<div class="order-card ' + (!isOpened ? 'new-alert' : '') + ' ' + (isOpened ? 'open' : '') + '" id="card-' + ord.code + '">' +
+                '<div class="order-header" onclick="openReceipt(\'' + ord.code + '\')">' +
+                  '<div><strong>كود: ' + ord.code + '</strong> | العميل: ' + ord.name + '</div>' +
+                  '<div><span>الحالة: <b>' + ord.status + '</b></span></div>' +
+                '</div>' +
+                '<div class="receipt-body">' +
+                  '<h3 style="text-align:center;">--- فاتورة طلب ---</h3>' +
+                  '<p><b>كود الطلب:</b> ' + ord.code + '</p>' +
+                  '<p><b>الاسم:</b> ' + ord.name + '</p>' +
+                  '<p><b>العنوان:</b> ' + ord.address + '</p>' +
+                  '<p><b>الهاتف:</b> ' + ord.phone + '</p><br>' +
+                  '<table class="receipt-table">' +
+                    '<thead><tr><th>الصنف</th><th>العدد</th><th>السعر</th></tr></thead>' +
+                    '<tbody>' + itemsHtml + '</tbody>' +
+                  '</table>' +
+                  '<h4 style="text-align:left;">الإجمالي الكلي: ' + ord.totalMoney + ' جنيه</h4>' +
+                  '<div class="btn-group">' +
+                    '<button class="btn-accept" onclick="handleAccept(\'' + ord.code + '\')">✔ قبول الطلب</button>' +
+                    '<button class="btn-reject" onclick="handleReject(\'' + ord.code + '\')">✖ إلغاء/رفض</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function openReceipt(code) {
+    if (!knownOrders[code]) knownOrders[code] = {};
+    knownOrders[code].opened = !knownOrders[code].opened;
+    
+    var card = document.getElementById('card-' + code);
+    if (card) {
+      card.classList.remove('new-alert');
+      card.classList.toggle('open');
+    }
+  }
+
+  function handleAccept(code) {
+    updateStatusAndHide(code, 'مقبول');
+  }
+
+  function handleReject(code) {
+    updateStatusAndHide(code, 'مرفوض');
+  }
+
+  function updateStatusAndHide(code, newStatus) {
+    var card = document.getElementById('card-' + code);
+    if (card) {
+      card.parentNode.removeChild(card);
+    }
+    
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", GOOGLE_SCRIPT_URL, true);
+    xhr.setRequestHeader("Content-Type", "text/plain");
+    xhr.send(JSON.stringify({ action: "updateStatus", orderCode: code, status: newStatus }));
+  }
+
+  // تحديث كل 5 ثوانٍ لتقليل الضغط على معالج الشاشة
+  setInterval(fetchLiveOrders, 5000);
+  fetchLiveOrders();
+</script>
+</body>
+</html>
