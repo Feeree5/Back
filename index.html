@@ -203,50 +203,51 @@
   fetchLiveOrders();
   window.onload = function() {
     var video = document.getElementById('myVideo');
-    
-    // 1. إجبار الخصائص الأساسية من خلال JavaScript
+    if (!video) return;
+
+    // ضبط الصلاحيات المطلوبة
     video.muted = true;
     video.setAttribute('muted', 'true');
-    video.loop = true;
-    video.setAttribute('loop', 'true');
 
-    // وظيفة إعادة تشغيل الفيديو فوراً
-    function restartVideo() {
+    // الدالة القاطعة لإعادة تشغيل الفيديو في متصفحات الشاشات القديمة
+    function forceReplay() {
       try {
+        // إذا فشلت الطريقة العادية يتم إعادة جلب الملف لإجبار مشغل توشيبا على البدء
+        video.pause();
+        var currentSrc = video.currentSrc || video.src;
+        
+        // إعادة التعيين الصريح للمصدر يفك تجميد المعالج القديم
+        video.src = '';
+        video.load();
+        video.src = currentSrc;
         video.currentTime = 0;
         video.play();
       } catch (e) {
-        console.log("Replay error: ", e);
+        console.log("Replay fail: ", e);
       }
     }
 
-    // 2. المراقبة التقليدية عبر حدث انتهى (ended)
-    video.addEventListener('ended', function() {
-      restartVideo();
-    }, false);
-
-    // 3. حل مشكلة المتصفح القديم: مراقبة الوقت بدقة قبل الوصول للنهاية
+    // 1. مراقبة اقتراب النهاية (تغطي الشاشات التي لا تطلق حدث ended)
     video.addEventListener('timeupdate', function() {
-      // إذا كان باقي على نهاية الفيديو أقل من 0.3 ثانية، أعد التشغيل فوراً
-      if (video.duration && (video.duration - video.currentTime) < 0.3) {
-        restartVideo();
+      if (video.duration && (video.duration - video.currentTime) <= 0.5) {
+        forceReplay();
       }
     }, false);
 
-    // 4. حارس أمان إضافي (Fallback Check) يتفقد حالة الفيديو كل ثانية
-    setInterval(function() {
-      if (video.paused || video.ended) {
-        restartVideo();
-      }
-    }, 1000);
+    // 2. حدث الانتهاء المباشر
+    video.addEventListener('ended', function() {
+      forceReplay();
+    }, false);
 
-    // 5. البدء الأولي للتعديل والتشغيل
-    var promise = video.play();
-    if (promise !== undefined && promise.catch) {
-      promise.catch(function(error) {
-        console.log("Autoplay blocked:", error);
-      });
-    }
+    // 3. مراقبة التوقف أو الفشل كخطة طوارئ كل ثوانٍ
+    setInterval(function() {
+      if (video.paused || video.ended || video.readyState < 3) {
+        forceReplay();
+      }
+    }, 2000);
+
+    // التشغيل الأولي فور الفتح
+    video.play();
   };
   
 </script>
