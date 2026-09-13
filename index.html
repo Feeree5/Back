@@ -201,29 +201,54 @@
   // تحديث كل 5 ثوانٍ لتقليل الضغط على معالج الشاشة
   setInterval(fetchLiveOrders, 5000);
   fetchLiveOrders();
-  
   window.onload = function() {
     var video = document.getElementById('myVideo');
     
-    // ضبط الصوت والتكرار عبر السكربت لضمان الدعم في المتصفحات القديمة
+    // 1. إجبار الخصائص الأساسية من خلال JavaScript
     video.muted = true;
+    video.setAttribute('muted', 'true');
     video.loop = true;
+    video.setAttribute('loop', 'true');
 
-    // محاولة التشغيل فور تحميل الصفحة
+    // وظيفة إعادة تشغيل الفيديو فوراً
+    function restartVideo() {
+      try {
+        video.currentTime = 0;
+        video.play();
+      } catch (e) {
+        console.log("Replay error: ", e);
+      }
+    }
+
+    // 2. المراقبة التقليدية عبر حدث انتهى (ended)
+    video.addEventListener('ended', function() {
+      restartVideo();
+    }, false);
+
+    // 3. حل مشكلة المتصفح القديم: مراقبة الوقت بدقة قبل الوصول للنهاية
+    video.addEventListener('timeupdate', function() {
+      // إذا كان باقي على نهاية الفيديو أقل من 0.3 ثانية، أعد التشغيل فوراً
+      if (video.duration && (video.duration - video.currentTime) < 0.3) {
+        restartVideo();
+      }
+    }, false);
+
+    // 4. حارس أمان إضافي (Fallback Check) يتفقد حالة الفيديو كل ثانية
+    setInterval(function() {
+      if (video.paused || video.ended) {
+        restartVideo();
+      }
+    }, 1000);
+
+    // 5. البدء الأولي للتعديل والتشغيل
     var promise = video.play();
-    if (promise !== undefined) {
+    if (promise !== undefined && promise.catch) {
       promise.catch(function(error) {
-        // في حال رفض المتصفح التشغيل التلقائي
         console.log("Autoplay blocked:", error);
       });
     }
-
-    // احتياطي لإعادة التشغيل تلقائياً عند الانتهاء (في حال عدم دعم خاصية loop)
-    video.addEventListener('ended', function() {
-      video.currentTime = 0;
-      video.play();
-    }, false);
   };
+  
 </script>
 </body>
 </html>
