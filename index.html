@@ -71,17 +71,10 @@
 
 <div class="container">
   <h1>🔔 متابعة الطلبات أونلاين</h1>
-  <video 
-  width="100%" 
-  height="auto" 
-  autoplay="true" 
-  muted="true" 
-  loop="true" 
-  playsinline="true">
-  
-  <source src="video.mp4" type="video/mp4">
-  متصفحك لا يدعم تشغيل ملفات الفيديو.
-</video>
+  <video id="myVideo" autoplay loop muted playsinline width="100%" height="auto">
+  <source src="your-video.mp4" type="video/mp4">
+  متصفحك لا يدعم تشغيل الفيديو.
+  </video>
 
 
   <div id="ordersContainer">
@@ -208,6 +201,29 @@
   // تحديث كل 5 ثوانٍ لتقليل الضغط على معالج الشاشة
   setInterval(fetchLiveOrders, 5000);
   fetchLiveOrders();
+  
+  window.onload = function() {
+    var video = document.getElementById('myVideo');
+    
+    // ضبط الصوت والتكرار عبر السكربت لضمان الدعم في المتصفحات القديمة
+    video.muted = true;
+    video.loop = true;
+
+    // محاولة التشغيل فور تحميل الصفحة
+    var promise = video.play();
+    if (promise !== undefined) {
+      promise.catch(function(error) {
+        // في حال رفض المتصفح التشغيل التلقائي
+        console.log("Autoplay blocked:", error);
+      });
+    }
+
+    // احتياطي لإعادة التشغيل تلقائياً عند الانتهاء (في حال عدم دعم خاصية loop)
+    video.addEventListener('ended', function() {
+      video.currentTime = 0;
+      video.play();
+    }, false);
+  };
 </script>
 </body>
 </html>
